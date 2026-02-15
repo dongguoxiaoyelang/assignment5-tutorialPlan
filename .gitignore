@@ -1,0 +1,10 @@
+build/
+benchmarkrecordings/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*_autogen/
+*.user
+trajectory.txt
+benchmark.csv
