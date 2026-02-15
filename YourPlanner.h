@@ -27,8 +27,8 @@ public:
 protected:
   //extension switches
   static constexpr bool USE_EXHAUSTED = true;  // Ext2
-  static constexpr bool USE_KNN       = true;  // Ext3
-  static constexpr bool USE_WEIGHTED  = false;   // Ext4
+  static constexpr bool USE_KNN       = false;  // Ext3
+  static constexpr bool USE_WEIGHTED  = true;   // Ext4
 
   ::rl::math::Real weightedDistance(const ::rl::math::Vector& a,
                                    const ::rl::math::Vector& b) const;

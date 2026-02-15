@@ -69,12 +69,13 @@ YourPlanner::choose(::rl::math::Vector& chosen)
   }
 }
 
+//ext4: weighted metrics
 ::rl::math::Real
 YourPlanner::weightedDistance(const ::rl::math::Vector& a,
                               const ::rl::math::Vector& b) const
 {
   // Puma560 (6 DoF) recommended "front-heavy" weights
-  // J1-3: 1.0, J4-6: 0.5
+  // J1-3: 1.0, J4-6: 0.8
   static const double w[6] = {1.0, 1.0, 1.0, 0.8, 0.8, 0.8};
 
   ::rl::math::Real sum = 0;
@@ -87,29 +88,34 @@ YourPlanner::weightedDistance(const ::rl::math::Vector& a,
     sum += wi * d * d;
   }
 
-  return sum;
+  return std::sqrt(sum);
 }
 
 RrtConConBase::Neighbor
 YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
 {
-  //kNN
+  //standard best nearest
   if (!USE_KNN)
   {
     Neighbor best(Vertex(), std::numeric_limits< ::rl::math::Real >::max());
 
+    //ext2: get the exhausted set for this tree
     const std::set<Vertex>* currentExhausted = NULL;
     if (USE_EXHAUSTED)
     {
+      //exhausted is stored per tree pointer
       currentExhausted = &this->exhausted[&tree];
     }
 
+    //iterate over all vertices in the boost graph tree
     VertexIteratorPair it = ::boost::vertices(tree);
     for (VertexIterator i = it.first; i != it.second; ++i)
     {
+      //skip vertices without a valid configuration
       if (!tree[*i].q)
         continue;
 
+      //ext2: skip exhausted nnodes
       if (USE_EXHAUSTED && currentExhausted)
       {
         if (currentExhausted->find(*i) != currentExhausted->end())
@@ -118,6 +124,7 @@ YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
 
       ::rl::math::Real d;
 
+      //ext4:weighted metric
       if (USE_WEIGHTED)
       {
         d = this->weightedDistance(chosen, *tree[*i].q); // real distance
@@ -129,6 +136,7 @@ YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
         d = this->model->inverseOfTransformedDistance(d);
       }
 
+      //keep the smallest distance
       if (d < best.second)
       {
         best.first = *i;
@@ -144,7 +152,7 @@ YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
     return best;
   }
 
-  // -------- KNN path: keep your old logic (vector + sort) --------
+  //ext3-kNN
   std::vector<std::pair<Vertex, ::rl::math::Real>> candidates;
 
   const std::set<Vertex>* currentExhausted = NULL;
@@ -153,6 +161,7 @@ YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
     currentExhausted = &this->exhausted[&tree];
   }
 
+  //collect all candidate vertices with their distance
   VertexIteratorPair it = ::boost::vertices(tree);
   for (VertexIterator i = it.first; i != it.second; ++i)
   {
@@ -167,6 +176,7 @@ YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
 
     ::rl::math::Real d;
 
+    //ext4-weighted distance metric
     if (USE_WEIGHTED)
     {
       d = this->weightedDistance(chosen, *tree[*i].q);
@@ -180,11 +190,13 @@ YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
     candidates.push_back(std::make_pair(*i, d));
   }
 
+  //if no candidates exist, fallback to base class
   if (candidates.empty())
   {
     return RrtConConBase::nearest(tree, chosen);
   }
 
+  //sort by distance ascending
   std::sort(
     candidates.begin(),
     candidates.end(),
@@ -194,11 +206,17 @@ YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
       return a.second < b.second;
     });
 
+  //ext3 KNN: select uniformly among first k nearest candidates
+  //if <5, shrink k
   const int k = std::min(5, static_cast<int>(candidates.size()));
+
+  //randomly pick an index in [0,k-1]
   static std::random_device rd;
   static std::mt19937 gen(rd());
   std::uniform_int_distribution<> dist(0, k - 1);
 
+  //Selected vertex is not necessarily the best nearest
+  //but within the nearest set
   auto selected = candidates[dist(gen)];
 
   Neighbor result;
@@ -216,13 +234,16 @@ YourPlanner::connect(Tree& tree, const Neighbor& nearest, const ::rl::math::Vect
 
   if (USE_EXHAUSTED)
   {
+    //ext2 threshold
     const int THRESH = 15;
 
-    if (NULL == newVertex)
+    if (newVertex == Vertex())
     {
+      //increase failure counter for this nearest vertex in this tree
       int& cnt = this->failCount[&tree][nearest.first];
       cnt++;
 
+      //if too many consecutive failures, mark as exhausted
       if (cnt >= THRESH)
       {
         this->exhausted[&tree].insert(nearest.first);
@@ -230,6 +251,7 @@ YourPlanner::connect(Tree& tree, const Neighbor& nearest, const ::rl::math::Vect
     }
     else
     {
+      //success, reset counter for this vertex
       this->failCount[&tree][nearest.first] = 0;
     }
   }
